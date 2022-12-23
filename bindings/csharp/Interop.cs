@@ -5,6 +5,10 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+#if UNITY_2018_1_OR_NEWER
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Collections;
+#endif
 using Gustaf.UnityWrapper;
 #pragma warning restore 0105
 
@@ -19,54 +23,46 @@ namespace Gustaf.UnityWrapper
         }
 
 
-        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "get_random_int")]
-        public static extern int get_random_int();
+        /// Destroys the given instance.
+        ///
+        /// # Safety
+        ///
+        /// The passed parameter MUST have been created with the corresponding init function;
+        /// passing any other value results in undefined behavior.
+        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ffi_player_struct_destroy")]
+        public static extern MyFFIError ffi_player_struct_destroy(ref IntPtr context);
 
-        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mutate_slice_u32")]
-        public static extern void mutate_slice_u32(ref SliceMutu32 slice);
+        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ffi_player_struct_build_default")]
+        public static extern MyFFIError ffi_player_struct_build_default(ref IntPtr context);
+
+        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ffi_player_struct_get_player_name")]
+        public static extern IntPtr ffi_player_struct_get_player_name(IntPtr context);
+
+        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "get_player_data")]
+        public static extern void get_player_data(ref SliceMutPlayerData ffi_slice);
 
         #if UNITY_2018_1_OR_NEWER
-        public static void mutate_slice_u32(NativeArray<uint> slice)
+        public static void get_player_data(NativeArray<IntPtr> ffi_slice)
         {
-            var slice_slice = new SliceMutu32(slice);
-            mutate_slice_u32(ref slice_slice);;
-        }
-        #endif
-
-        [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "mutate_slice_transform")]
-        public static extern void mutate_slice_transform(ref SliceMutTransform slice);
-
-        #if UNITY_2018_1_OR_NEWER
-        public static void mutate_slice_transform(NativeArray<Transform> slice)
-        {
-            var slice_slice = new SliceMutTransform(slice);
-            mutate_slice_transform(ref slice_slice);;
+            var ffi_slice_slice = new SliceMutPlayerData(ffi_slice);
+            get_player_data(ref ffi_slice_slice);;
         }
         #endif
 
     }
 
-    [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
-    public partial struct Transform
+    public enum MyFFIError
     {
-        public Vec3 translation;
-        public Vec3 rotation;
-    }
-
-    [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
-    public partial struct Vec3
-    {
-        public float x;
-        public float y;
-        public float z;
+        Ok = 0,
+        NullPassed = 1,
+        Panic = 2,
+        OtherError = 3,
     }
 
     ///A pointer to an array of data someone else owns which may be modified.
     [Serializable]
     [StructLayout(LayoutKind.Sequential)]
-    public partial struct SliceMutTransform
+    public partial struct SliceMutPlayerData
     {
         ///Pointer to start of mutable data.
         #if UNITY_2018_1_OR_NEWER
@@ -77,26 +73,36 @@ namespace Gustaf.UnityWrapper
         ulong len;
     }
 
-    public partial struct SliceMutTransform : IEnumerable<Transform>
+    public partial struct SliceMutPlayerData : IEnumerable<IntPtr>
     {
-        public SliceMutTransform(GCHandle handle, ulong count)
+        public SliceMutPlayerData(GCHandle handle, ulong count)
         {
             this.data = handle.AddrOfPinnedObject();
             this.len = count;
         }
-        public SliceMutTransform(IntPtr handle, ulong count)
+        public SliceMutPlayerData(IntPtr handle, ulong count)
         {
             this.data = handle;
             this.len = count;
         }
-        public Transform this[int i]
+        #if UNITY_2018_1_OR_NEWER
+        public SliceMutPlayerData(NativeArray<IntPtr> handle)
+        {
+            unsafe
+            {
+                this.data = new IntPtr(NativeArrayUnsafeUtility.GetUnsafeReadOnlyPtr(handle));
+                this.len = (ulong) handle.Length;
+            }
+        }
+        #endif
+        public IntPtr this[int i]
         {
             get
             {
                 if (i >= Count) throw new IndexOutOfRangeException();
                 unsafe
                 {
-                    var d = (Transform*) data.ToPointer();
+                    var d = (IntPtr*) data.ToPointer();
                     return d[i];
                 }
             }
@@ -105,16 +111,16 @@ namespace Gustaf.UnityWrapper
                 if (i >= Count) throw new IndexOutOfRangeException();
                 unsafe
                 {
-                    var d = (Transform*) data.ToPointer();
+                    var d = (IntPtr*) data.ToPointer();
                     d[i] = value;
                 }
             }
         }
-        public Transform[] Copied
+        public IntPtr[] Copied
         {
             get
             {
-                var rval = new Transform[len];
+                var rval = new IntPtr[len];
                 for (var i = 0; i < (int) len; i++) {
                     rval[i] = this[i];
                 }
@@ -122,7 +128,7 @@ namespace Gustaf.UnityWrapper
             }
         }
         public int Count => (int) len;
-        public IEnumerator<Transform> GetEnumerator()
+        public IEnumerator<IntPtr> GetEnumerator()
         {
             for (var i = 0; i < (int)len; ++i)
             {
@@ -136,78 +142,41 @@ namespace Gustaf.UnityWrapper
     }
 
 
-    ///A pointer to an array of data someone else owns which may be modified.
-    [Serializable]
-    [StructLayout(LayoutKind.Sequential)]
-    public partial struct SliceMutu32
-    {
-        ///Pointer to start of mutable data.
-        #if UNITY_2018_1_OR_NEWER
-        [NativeDisableUnsafePtrRestriction]
-        #endif
-        IntPtr data;
-        ///Number of elements.
-        ulong len;
-    }
 
-    public partial struct SliceMutu32 : IEnumerable<uint>
+    public partial class PlayerData : IDisposable
     {
-        public SliceMutu32(GCHandle handle, ulong count)
-        {
-            this.data = handle.AddrOfPinnedObject();
-            this.len = count;
-        }
-        public SliceMutu32(IntPtr handle, ulong count)
-        {
-            this.data = handle;
-            this.len = count;
-        }
-        public uint this[int i]
-        {
-            get
-            {
-                if (i >= Count) throw new IndexOutOfRangeException();
-                unsafe
-                {
-                    var d = (uint*) data.ToPointer();
-                    return d[i];
-                }
-            }
-            set
-            {
-                if (i >= Count) throw new IndexOutOfRangeException();
-                unsafe
-                {
-                    var d = (uint*) data.ToPointer();
-                    d[i] = value;
-                }
-            }
-        }
-        public uint[] Copied
-        {
-            get
-            {
-                var rval = new uint[len];
-                for (var i = 0; i < (int) len; i++) {
-                    rval[i] = this[i];
-                }
-                return rval;
-            }
-        }
-        public int Count => (int) len;
-        public IEnumerator<uint> GetEnumerator()
-        {
-            for (var i = 0; i < (int)len; ++i)
-            {
-                yield return this[i];
-            }
-        }
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return this.GetEnumerator();
-        }
-    }
+        private IntPtr _context;
 
+        private PlayerData() {}
+
+        public static PlayerData BuildDefault()
+        {
+            var self = new PlayerData();
+            var rval = Interop.ffi_player_struct_build_default(ref self._context);
+            if (rval != MyFFIError.Ok)
+            {
+                throw new InteropException<MyFFIError>(rval);
+            }
+            return self;
+        }
+
+        public void Dispose()
+        {
+            var rval = Interop.ffi_player_struct_destroy(ref _context);
+            if (rval != MyFFIError.Ok)
+            {
+                throw new InteropException<MyFFIError>(rval);
+            }
+        }
+
+        public string GetPlayerName()
+        {
+            var s = Interop.ffi_player_struct_get_player_name(_context);
+            return Marshal.PtrToStringAnsi(s);
+        }
+
+        public IntPtr Context => _context;
+    }
 
 
 
